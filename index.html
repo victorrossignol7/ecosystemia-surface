@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>À décider</title>
+<style>
+:root{--bg:#0f1113;--card:#181b1f;--line:#2a2f36;--txt:#e8eaed;--dim:#9aa3ad;
+      --ok:#3f8f5f;--no:#a8483e;--acc:#5b8dd6}
+@media(prefers-color-scheme:light){:root{--bg:#f6f7f9;--card:#fff;--line:#e2e5ea;
+      --txt:#1a1d21;--dim:#5f6873;--ok:#2e7d51;--no:#a83c32;--acc:#2f6bbf}}
+*{box-sizing:border-box}
+body{margin:0;padding:20px 16px 56px;background:var(--bg);color:var(--txt);
+     font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.w{max-width:640px;margin:0 auto}
+h1{font-size:20px;margin:0 0 2px;letter-spacing:-.01em}
+.sub{color:var(--dim);font-size:13.5px;margin-bottom:22px}
+.msg{border-radius:10px;padding:13px 16px;margin-bottom:18px;font-size:14.5px;
+     background:var(--card);border:1px solid var(--line);border-left:3px solid var(--acc)}
+.msg.ok{border-left-color:var(--ok)}.msg.ko{border-left-color:var(--no)}
+.c{background:var(--card);border:1px solid var(--line);border-radius:12px;
+   padding:18px;margin-bottom:14px}
+.meta{font-size:12px;color:var(--dim);text-transform:uppercase;
+      letter-spacing:.05em;margin-bottom:7px}
+.act{font-size:17px;font-weight:600;line-height:1.35;margin-bottom:10px}
+.det{font-size:14px;color:var(--dim);margin-bottom:4px}
+.exp{font-size:13px;color:var(--dim);margin:12px 0 15px;padding-top:12px;
+     border-top:1px solid var(--line)}
+.b{display:flex;gap:10px}
+button{flex:1;padding:15px;border:none;border-radius:9px;font-size:16px;
+       font-weight:600;color:#fff;cursor:pointer;font-family:inherit}
+.y{background:var(--ok)}.n{background:var(--no)}
+button:active{opacity:.75}button:disabled{opacity:.5}
+.vide{text-align:center;color:var(--dim);padding:48px 20px;font-size:15px}
+footer{margin-top:26px;font-size:12.5px;color:var(--dim);line-height:1.5}
+</style>
+</head>
+<body>
+<div class="w">
+  <h1>À décider</h1>
+  <div class="sub" id="sub">Chargement…</div>
+  <div id="banniere"></div>
+  <div id="corps"></div>
+  <footer>Vous approuvez une <strong>intention</strong>, pas un résultat :
+  rien n'a encore été engagé à l'extérieur. Sans réponse avant l'échéance, la
+  demande est refusée par défaut.<br>Si une décision vous demande plus de dix
+  secondes, c'est la tâche qui est mal découpée — dites-le à Victor.</footer>
+</div>
+<script>
+// L'API est une Edge Function Supabase (JSON seul). Cette page est servie
+// depuis un hébergeur externe : l'appel est donc cross-origin, la fonction
+// renvoie les en-têtes CORS qu'il faut.
+const API = "https://uwfkihemfsmzkilzuhac.supabase.co/functions/v1/approbations";
+// Clé publiable (« publishable ») : conçue pour vivre côté client, elle ne
+// donne aucun droit — toute décision passe par le jeton et par la base.
+const CLE = "sb_publishable_6tg0aN578mYSAV0YumH2YQ_TlGXBIMJ";
+const jeton = new URLSearchParams(location.search).get("j") || "";
+
+const $ = (id) => document.getElementById(id);
+
+function videEl(msg) {
+  const d = document.createElement("div");
+  d.className = "vide";
+  d.textContent = msg;
+  return d;
+}
+
+// Les titres de tâches viennent d'agents et de sources externes. On n'insère
+// jamais de HTML : tout passe par textContent, aucune interprétation possible.
+function carte(a) {
+  const c = document.createElement("div"); c.className = "c";
+
+  const meta = document.createElement("div"); meta.className = "meta";
+  meta.textContent = (a.machine || "—") + " · " + (a.task_key || "");
+
+  const act = document.createElement("div"); act.className = "act";
+  act.textContent = a.resume_action || "";
+  c.append(meta, act);
+
+  if (a.raisonnement) {
+    const r = document.createElement("div"); r.className = "det";
+    r.textContent = a.raisonnement; c.appendChild(r);
+  }
+
+  const prod = document.createElement("div"); prod.className = "det";
+  prod.textContent = "Proposé par " + (a.producteur || "")
+    + (a.confiance != null ? " · confiance " + a.confiance : "");
+
+  const exp = document.createElement("div"); exp.className = "exp";
+  exp.textContent = "Expire dans " + a.heures_restantes
+    + " h — sans réponse, refusé.";
+
+  const b = document.createElement("div"); b.className = "b";
+  b.append(
+    bouton("y", "Approuver", () => decider(a.approval_id, "oui")),
+    bouton("n", "Refuser", () => decider(a.approval_id, "non")),
+  );
+
+  c.append(prod, exp, b);
+  return c;
+}
+
+function bouton(cls, label, onclick) {
+  const btn = document.createElement("button");
+  btn.className = cls; btn.textContent = label; btn.onclick = onclick;
+  return btn;
+}
+
+function afficherBanniere(banniere) {
+  $("banniere").replaceChildren();
+  if (!banniere) return;
+  const b = document.createElement("div");
+  b.className = "msg " + (banniere.ok ? "ok" : "ko");
+  b.textContent = banniere.message || "";
+  $("banniere").appendChild(b);
+}
+
+function messageSeul(sousTitre, texte) {
+  $("sub").textContent = sousTitre;
+  $("corps").replaceChildren(videEl(texte));
+}
+
+async function charger(banniere) {
+  afficherBanniere(banniere);
+
+  if (!jeton) { messageSeul("Accès personnel", "Lien incomplet."); return; }
+
+  let data;
+  try {
+    const r = await fetch(API + "?j=" + encodeURIComponent(jeton), {
+      headers: { "Accept": "application/json", apikey: CLE },
+    });
+    data = await r.json();
+  } catch {
+    messageSeul("Erreur", "Service momentanément indisponible.");
+    return;
+  }
+
+  if (!data || data.erreur === "lien_invalide") {
+    messageSeul("Accès personnel", "Lien invalide ou révoqué.");
+    return;
+  }
+  if (data.erreur) {
+    messageSeul("Erreur", "Service momentanément indisponible.");
+    return;
+  }
+
+  const file = Array.isArray(data.file) ? data.file : [];
+  const n = file.length;
+  $("sub").textContent = n === 0 ? "Aucune décision en attente"
+    : n + " décision" + (n > 1 ? "s" : "") + " en attente";
+
+  if (n === 0) {
+    $("corps").replaceChildren(
+      videEl("Rien n'attend votre décision. Tout est à jour."));
+    return;
+  }
+  $("corps").replaceChildren(...file.map(carte));
+}
+
+let enCours = false;
+async function decider(id, d) {
+  if (enCours) return;
+  enCours = true;
+  document.querySelectorAll("button").forEach((b) => (b.disabled = true));
+
+  let res;
+  try {
+    const r = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json", apikey: CLE },
+      body: JSON.stringify({ j: jeton, id, d }),
+    });
+    res = await r.json();
+  } catch {
+    res = { ok: false,
+      message: "Service momentanément indisponible. Rien n'a été décidé." };
+  }
+
+  enCours = false;
+  charger(res);
+}
+
+charger(null);
+</script>
+</body>
+</html>
