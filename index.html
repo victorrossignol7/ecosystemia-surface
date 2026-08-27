@@ -42,6 +42,7 @@ footer{margin-top:26px;font-size:12.5px;color:var(--dim);line-height:1.5}
   <div class="sub" id="sub">Chargement…</div>
   <div id="banniere"></div>
   <div id="corps"></div>
+  <p class="sub" style="margin-top:18px"><a id="lien-tableau" href="#">Tableau de bord — ce que JARVIS fait maintenant →</a></p>
   <footer>Vous approuvez une <strong>intention</strong>, pas un résultat :
   rien n'a encore été engagé à l'extérieur. Sans réponse avant l'échéance, la
   demande est refusée par défaut.<br>Si une décision vous demande plus de dix
@@ -58,6 +59,8 @@ const CLE = "sb_publishable_6tg0aN578mYSAV0YumH2YQ_TlGXBIMJ";
 const jeton = new URLSearchParams(location.search).get("j") || "";
 
 const $ = (id) => document.getElementById(id);
+// Même jeton, même hébergeur : le tableau de bord est en lecture seule.
+$("lien-tableau").href = "tableau.html?j=" + encodeURIComponent(jeton);
 
 function videEl(msg) {
   const d = document.createElement("div");
