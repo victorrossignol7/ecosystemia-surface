@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>JARVIS — tableau de bord</title>
+<style>
+:root{--bg:#0f1113;--card:#181b1f;--line:#2a2f36;--txt:#e8eaed;--dim:#9aa3ad;
+      --ok:#3f8f5f;--no:#a8483e;--acc:#5b8dd6;--warn:#c9962b}
+@media(prefers-color-scheme:light){:root{--bg:#f6f7f9;--card:#fff;--line:#e2e5ea;
+      --txt:#1a1d21;--dim:#5f6873;--ok:#2e7d51;--no:#a83c32;--acc:#2f6bbf;--warn:#a5781a}}
+*{box-sizing:border-box}
+body{margin:0;padding:18px 14px 56px;background:var(--bg);color:var(--txt);
+     font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.w{max-width:720px;margin:0 auto}
+h1{font-size:20px;margin:0 0 2px;letter-spacing:-.01em}
+.sub{color:var(--dim);font-size:13px;margin-bottom:14px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:22px 0 8px}
+.c{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+.pill{display:inline-block;padding:6px 12px;border-radius:999px;font-weight:600;font-size:14px;color:#fff;background:var(--dim)}
+.pill.travail{background:var(--acc)}.pill.veille{background:var(--ok)}.pill.bloque{background:var(--no)}.pill.mort{background:var(--no)}.pill.inconnu{background:var(--warn)}
+.ligne{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.ligne:last-child{border-bottom:none}
+.h{color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;min-width:58px}
+.t{min-width:16px;text-align:center}
+.o{font-weight:600;white-space:nowrap}
+.d{color:var(--dim);overflow-wrap:anywhere}
+.ko{color:var(--no)}.okc{color:var(--ok)}
+.vide{color:var(--dim);font-size:14px;padding:6px 0}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+td:first-child{color:var(--dim);white-space:nowrap}
+.esc{border-left:3px solid var(--no)}
+.btn{display:inline-block;padding:9px 14px;border-radius:9px;background:var(--acc);color:#fff;text-decoration:none;font-weight:600;font-size:14px}
+button{padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--txt);font-family:inherit;font-size:13px;cursor:pointer}
+details summary{cursor:pointer;font-size:13.5px}
+details .ligne{padding-left:10px}
+a{color:var(--acc)}
+.maj{font-size:12px;color:var(--dim);margin-top:8px}
+footer{margin-top:26px;font-size:12px;color:var(--dim);line-height:1.5}
+</style>
+</head>
+<body>
+<div class="w">
+  <h1>JARVIS — tableau de bord</h1>
+  <div class="sub" id="sub">Chargement…</div>
+
+  <div class="c" id="bandeau">
+    <span class="pill inconnu" id="pill">…</span>
+    <div class="d" id="pill-detail" style="margin-top:8px"></div>
+    <div class="maj"><span id="maj">—</span> · <button id="actualiser" type="button">Actualiser</button></div>
+  </div>
+
+  <h2>Maintenant</h2>
+  <div class="c" id="activite"><div class="vide">—</div></div>
+
+  <h2>À décider</h2>
+  <div class="c" id="decisions"><div class="vide">—</div></div>
+
+  <h2>Escalades</h2>
+  <div class="c" id="escalades"><div class="vide">—</div></div>
+
+  <h2>Santé</h2>
+  <div class="c" id="sante"><div class="vide">—</div></div>
+
+  <h2>File PLATEFORME</h2>
+  <div class="c" id="file"><div class="vide">—</div></div>
+
+  <h2>Runs des 24 dernières heures</h2>
+  <div class="c" id="runs"><div class="vide">—</div></div>
+
+  <h2>Derniers cycles de la boucle</h2>
+  <div class="c" id="cycles"><div class="vide">—</div></div>
+
+  <h2>Événements</h2>
+  <div class="c" id="evenements"><div class="vide">—</div></div>
+
+  <footer>Lecture seule. Les décisions se prennent sur la page « À décider » ou sur Discord.
+  Ce que vous voyez vient de la base, jamais d'une note : si un chiffre vous étonne, c'est la base qui a raison.</footer>
+</div>
+<script>
+// API : fonction Edge « tableau » (JSON seul, lecture seule), appelée en
+// cross-origin depuis GitHub Pages. Clé publiable : aucun droit, tout passe
+// par le jeton personnel (?j=) et par la base.
+const API = "https://uwfkihemfsmzkilzuhac.supabase.co/functions/v1/tableau";
+const CLE = "sb_publishable_6tg0aN578mYSAV0YumH2YQ_TlGXBIMJ";
+const jeton = new URLSearchParams(location.search).get("j") || "";
+const PAGE_DECISIONS = "index.html?j=" + encodeURIComponent(jeton);
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+const heure = (iso) => iso ? new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+const heureCourte = (iso) => iso ? new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
+const dateHeure = (iso) => iso ? new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+const minutesDepuis = (iso) => Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+const euros = (n, d) => n == null ? "" : Number(n).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + (d || "EUR") + " HT";
+const ICONES = { debut: "●", texte: "✎", outil: "⚙", resultat: "↩", fin: "■", erreur: "⚠" };
+
+let arret = false;          // lien invalide : on n'insiste pas (chaque essai laisse une trace côté base)
+let cycleCourant = null;    // cycle suivi pour l'activité
+let curseur = 0;            // dernier id d'activité reçu
+let enCours = false;
+let derniereMaj = null;
+let delaiErreur = 5000;
+
+function vide(id, msg) { $(id).replaceChildren(el("div", "vide", msg)); }
+
+async function appel(params) {
+  const r = await fetch(API + "?j=" + encodeURIComponent(jeton) + params, { headers: { Accept: "application/json", apikey: CLE } });
+  const data = await r.json();
+  if (data && data.erreur === "lien_invalide") { arret = true; throw new Error("lien_invalide"); }
+  if (!r.ok || !data || data.erreur) throw new Error(data && data.erreur ? data.erreur : "http " + r.status);
+  return data;
+}
+
+// ---- bandeau : que fait JARVIS, là, maintenant ----
+function prochainCycle(intervalleMin) {
+  const d = new Date(); const pas = (intervalleMin || 30) * 60000;
+  return new Date(Math.ceil((d.getTime() + 1000) / pas) * pas);
+}
+function afficherBoucle(b) {
+  const pill = $("pill"), det = $("pill-detail");
+  pill.className = "pill";
+  if (!b) { pill.classList.add("inconnu"); pill.textContent = "Aucun cycle signalé encore"; det.textContent = "La boucle ne remonte pas encore son activité (brique en cours de livraison)."; return; }
+  const prochain = prochainCycle(b.intervalle_min);
+  if (b.en_cours) {
+    pill.classList.add("travail"); pill.textContent = "Au travail depuis " + minutesDepuis(b.debut_le) + " min";
+    det.textContent = "Cycle " + b.cycle_id + " · démarré à " + heureCourte(b.debut_le) + " · " + (b.nb_outils || 0) + " outils appelés";
+  } else if (b.silence_min > (b.intervalle_min || 30) * 2 + 5) {
+    pill.classList.add("mort"); pill.textContent = "Boucle morte depuis " + b.silence_min + " min";
+    det.textContent = "Dernier cycle " + b.cycle_id + " à " + dateHeure(b.fin_le || b.debut_le) + (b.ok === false ? " — " + (b.resultat || "en échec") : "") + ". Vérifier la tâche planifiée SecondCerveau-Boucle sur le PC.";
+  } else if (b.ok === false) {
+    pill.classList.add("bloque"); pill.textContent = "Bloqué : " + (b.resultat || "dernier cycle en échec");
+    det.textContent = "Dernier cycle " + heureCourte(b.fin_le) + " · prochain essai vers " + heureCourte(prochain.toISOString());
+  } else {
+    pill.classList.add("veille"); pill.textContent = "En veille — prochain cycle vers " + heureCourte(prochain.toISOString());
+    det.textContent = "Dernier cycle " + heureCourte(b.fin_le) + " · " + (b.resultat || "terminé") + (b.cout_usd != null ? " · " + Number(b.cout_usd).toFixed(3) + " $" : "");
+  }
+}
+
+// ---- activité du cycle : une ligne par étape ----
+function ligneActivite(a) {
+  const l = el("div", "ligne");
+  l.append(el("span", "h", heure(a.ts)), el("span", "t", ICONES[a.type] || "·"));
+  if (a.outil) l.append(el("span", "o", a.outil));
+  const d = el("span", "d" + (a.ok === false ? " ko" : ""), a.detail || "");
+  l.append(d);
+  return l;
+}
+function afficherActivite(act, remplacer) {
+  const zone = $("activite");
+  if (remplacer) zone.replaceChildren();
+  const lignes = Array.isArray(act.lignes) ? act.lignes : [];
+  if (remplacer && lignes.length === 0) { zone.replaceChildren(el("div", "vide", act.cycle_id ? "Aucune étape signalée pour ce cycle." : "Aucun cycle signalé.")); return; }
+  if (zone.firstChild && zone.firstChild.className === "vide") zone.replaceChildren();
+  for (const a of lignes) { zone.appendChild(ligneActivite(a)); curseur = Math.max(curseur, Number(a.id) || 0); }
+  if (lignes.length) zone.lastChild.scrollIntoView({ block: "nearest" });
+}
+
+// ---- sections d'état ----
+function afficherDecisions(appros) {
+  const zone = $("decisions"); zone.replaceChildren();
+  const n = appros.length;
+  const tete = el("div"); tete.append(el("span", null, n === 0 ? "Aucune demande en attente. " : n + " demande" + (n > 1 ? "s" : "") + " en attente. "));
+  const lien = el("a", "btn", "Ouvrir « À décider »"); lien.href = PAGE_DECISIONS; tete.appendChild(lien); zone.appendChild(tete);
+  for (const a of appros) {
+    const l = el("div", "ligne");
+    l.append(el("span", "h", a.heures_restantes + " h"),
+             el("span", "o", a.task_key || ""),
+             el("span", "d", (a.resume_action || "") + (a.montant != null ? " · " + euros(a.montant, a.devise) : "") + (a.refus_precedents ? " · " + a.refus_precedents + " refus précédent(s)" : "") + (a.a_moi_de_decider ? "" : " · (votre production : quelqu'un d'autre décide)")));
+    if (a.url_livrable) { const u = el("a", null, "livrable"); u.href = a.url_livrable; u.target = "_blank"; u.rel = "noopener"; l.appendChild(u); }
+    zone.appendChild(l);
+  }
+}
+function afficherEscalades(esc) {
+  const zone = $("escalades"); zone.replaceChildren();
+  if (!esc.length) { zone.appendChild(el("div", "vide", "Aucune escalade. Rien à surveiller.")); zone.classList.remove("esc"); return; }
+  zone.classList.add("esc");
+  for (const e of esc) { const l = el("div", "ligne"); l.append(el("span", "o ko", e.gravite), el("span", "o", e.categorie), el("span", "d", (e.ref || "") + " — " + (e.detail || ""))); zone.appendChild(l); }
+}
+function afficherSante(s) {
+  const t = el("table");
+  for (const r of s) { const tr = el("tr"); tr.append(el("td", null, r.rubrique), el("td", null, r.indicateur), el("td", null, r.valeur)); t.appendChild(tr); }
+  $("sante").replaceChildren(s.length ? t : el("div", "vide", "—"));
+}
+function afficherFile(f) {
+  const zone = $("file"); zone.replaceChildren();
+  if (!f.length) { zone.appendChild(el("div", "vide", "File vide.")); return; }
+  for (const t of f) {
+    const l = el("div", "ligne");
+    l.append(el("span", "o", t.statut + " " + t.grade), el("span", "d", t.task_key + " · " + (t.titre || "") + (t.note ? " — " + t.note : "") + " · essais " + t.essais));
+    zone.appendChild(l);
+  }
+}
+function afficherRuns(runs) {
+  const zone = $("runs"); zone.replaceChildren();
+  if (!runs.length) { zone.appendChild(el("div", "vide", "Aucun run sur 24 h.")); return; }
+  for (const r of runs) {
+    const d = el("details"); const s = el("summary");
+    s.textContent = heureCourte(r.started_at) + " · " + r.statut + " · " + (r.task_key || "") + " · " + (r.turns || 0) + " étapes" + (r.erreur ? " — " + r.erreur : "");
+    if (r.statut !== "COMPLETE") s.classList.add("ko");
+    d.appendChild(s);
+    for (const e of (r.etapes || [])) { const l = el("div", "ligne"); l.append(el("span", "h", heure(e.created_at)), el("span", "o", e.seq + ". " + e.tool), el("span", "d" + (e.erreur ? " ko" : ""), e.erreur || "")); d.appendChild(l); }
+    zone.appendChild(d);
+  }
+}
+function afficherCycles(b) {
+  const zone = $("cycles"); zone.replaceChildren();
+  const cycles = b && Array.isArray(b.derniers_cycles) ? b.derniers_cycles : [];
+  if (!cycles.length) { zone.appendChild(el("div", "vide", "Aucun cycle signalé.")); return; }
+  for (const c of cycles) {
+    const l = el("div", "ligne");
+    l.append(el("span", "h", heureCourte(c.debut_le)), el("span", "t" + (c.ok === false ? " ko" : c.ok ? " okc" : ""), c.fin_le ? (c.ok ? "✔" : "✖") : "…"),
+             el("span", "d", (c.resultat || (c.fin_le ? "" : "en cours")) + (c.nb_outils ? " · " + c.nb_outils + " outils" : "") + (c.cout_usd != null ? " · " + Number(c.cout_usd).toFixed(3) + " $" : "")));
+    zone.appendChild(l);
+  }
+}
+function afficherEvenements(ev) {
+  const zone = $("evenements"); zone.replaceChildren();
+  if (!ev.length) { zone.appendChild(el("div", "vide", "—")); return; }
+  for (const e of ev) {
+    const l = el("div", "ligne");
+    l.append(el("span", "h", heure(e.ts)), el("span", "o" + (e.severity === "DENY" ? " ko" : ""), e.event_type), el("span", "d", (e.actor || "") + " · " + (e.resource_key || "") + (e.rule_id ? " · " + e.rule_id : "")));
+    zone.appendChild(l);
+  }
+}
+
+// ---- boucles de rafraîchissement ----
+async function chargerTableau() {
+  if (arret || !jeton) return;
+  try {
+    const t = await appel("");
+    delaiErreur = 5000;
+    afficherBoucle(t.boucle);
+    afficherDecisions(t.approbations || []);
+    afficherEscalades(t.escalades || []);
+    afficherSante(t.sante || []);
+    afficherFile(t.file || []);
+    afficherRuns(t.runs || []);
+    afficherCycles(t.boucle);
+    afficherEvenements(t.evenements || []);
+    $("sub").textContent = "Lu par " + t.lecteur + " · base interrogée à " + heure(t.genere_le);
+    derniereMaj = Date.now();
+    enCours = !!(t.boucle && t.boucle.en_cours);
+    const cycle = t.boucle ? t.boucle.cycle_id : null;
+    if (cycle !== cycleCourant) { cycleCourant = cycle; curseur = 0; await chargerActivite(true); }
+  } catch (e) {
+    if (arret) { $("sub").textContent = "Lien invalide ou révoqué."; $("pill").textContent = "Accès refusé"; $("pill").className = "pill bloque"; return; }
+    $("sub").textContent = "Service momentanément indisponible (" + e.message + ") — nouvel essai dans " + Math.round(delaiErreur / 1000) + " s";
+    setTimeout(chargerTableau, delaiErreur); delaiErreur = Math.min(delaiErreur * 2, 30000);
+  }
+}
+async function chargerActivite(remplacer) {
+  if (arret || !jeton) return;
+  try {
+    const act = await appel("&vue=activite" + (cycleCourant ? "&cycle=" + encodeURIComponent(cycleCourant) : "") + "&apres=" + (remplacer ? 0 : curseur));
+    if (remplacer) curseur = 0;
+    afficherActivite(act, remplacer);
+    enCours = !!act.en_cours;
+  } catch { /* le prochain tour réessaie */ }
+}
+function tick() {
+  if (document.visibilityState === "hidden" || arret) return;
+  const s = derniereMaj ? Math.round((Date.now() - derniereMaj) / 1000) : null;
+  $("maj").textContent = s == null ? "—" : "mis à jour il y a " + s + " s" + (enCours ? " · suivi en direct" : "");
+  if (enCours && (s == null || s % 4 === 0)) chargerActivite(false);
+  if (s != null && s >= 30) chargerTableau();
+}
+$("actualiser").onclick = () => chargerTableau();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") chargerTableau(); });
+if (!jeton) { $("sub").textContent = "Lien incomplet : il manque le jeton personnel."; $("pill").textContent = "Accès personnel"; }
+else { chargerTableau(); setInterval(tick, 1000); }
+</script>
+</body>
+</html>
